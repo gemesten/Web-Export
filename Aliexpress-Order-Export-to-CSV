@@ -1,0 +1,105 @@
+#!/usr/bin/python3
+from bs4 import BeautifulSoup
+import dateutil.parser as dparser
+import re
+import csv
+
+file_path = 'C:/Users/Orders.html'
+
+# Open the HTML file and read its content
+with open(file_path, 'r', encoding='utf-8') as file:
+    html_content = file.read()
+
+# Create a Beautiful Soup object
+soup = BeautifulSoup(html_content, 'html.parser')
+
+# Get all orders
+all_orders = soup.find_all("div", class_="order-item")
+
+# Create a list to hold all the order data for CSV
+order_data = []
+
+# Iterate over each order and extract data
+for order in all_orders:
+    # Initialize a dictionary to hold data for the current order
+    order_dict = {}
+    
+    # Get order status
+    order_dict["Order Status"] = order.find("div", class_="order-item-header-status").text if order.find("div", class_="order-item-header-status") else "n/a"
+    
+    # Get order date and number
+    info_element = order.find("div", class_="order-item-header-right-info")
+    sub_elements = info_element.find_all("div") if info_element else []
+    
+    order_dict["Order Date"] = dparser.parse(sub_elements[0].contents[0], fuzzy=True).strftime('%d/%m/%y') if sub_elements and sub_elements[0].contents else "n/a"
+    order_dict["Order Number"] = re.findall(r'\d+', sub_elements[1].contents[0])[0] if sub_elements and sub_elements[1].contents else "n/a"
+    
+    # Get store name and URL
+    store = order.find("div", "order-item-store")
+    order_dict["Store Name"] = store.a.text if store and store.a else "n/a"
+    order_dict["Store URL"] = store.a.get('href') if store and store.a else "n/a"
+    
+    # Get order item name and URL
+    item_content = order.find("div", class_="order-item-content-info-name")
+    if item_content:
+        order_dict["Item Name"] = item_content.text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+        order_dict["Item URL"] = item_content.find('a').get('href')
+    else:
+        order_dict["Item Name"] = "n/a"
+        order_dict["Item URL"] = "n/a"
+
+    # Get item price
+    price_info = order.find("div", class_="order-item-content-info-number")
+    if price_info:
+        item_price = price_info.find("div", class_="es--wrap--2p8eS4Q").text
+        result = item_price.split('$')
+        order_dict["Item Price Currency"] = result[0]
+        order_dict["Item Price Amount"] = result[1]
+    else:
+        order_dict["Item Price Currency"] = "n/a"
+        order_dict["Item Price Amount"] = "n/a"
+    
+    # Get order total
+    total_price = order.find("div", class_="order-item-content-opt-price")
+    if total_price:
+        order_total = total_price.find("div", class_="es--wrap--2p8eS4Q").text
+        result = order_total.split('$')
+        order_dict["Order Total Currency"] = result[0]
+        order_dict["Order Total Amount"] = result[1]
+    else:
+        order_dict["Order Total Currency"] = "n/a"
+        order_dict["Order Total Amount"] = "n/a"
+    
+    # Get order quantity
+    quantity_info = order.find(class_="order-item-content-info-number-quantity")
+    order_dict["Order Quantity"] = re.findall(r'\d+', quantity_info.string)[0] if quantity_info else "n/a"
+    
+    # Get order item image
+    img_url = order.find(class_="order-item-content-img").get('style') if order.find(class_="order-item-content-img") else None
+    if img_url:
+        order_dict["Order Image"] = re.findall('"([^"]*)"', img_url)[0]
+    else:
+        order_dict["Order Image"] = "n/a"
+
+    # Get full order URL
+    order_link = order.find("a", {'data-pl' : True})
+    order_dict["Order URL"] = order_link.get('href') if order_link else "n/a"
+    
+    # Append the data for this order to the list
+    order_data.append(order_dict)
+    
+    # Open the file in write mode
+with open('orders.csv', mode='w', newline='', encoding='utf-8') as file:
+    
+    # Define the fieldnames (columns) for the CSV
+    fieldnames = ['Order Status', 'Order Date', 'Order Number', 'Item Price Currency', 'Item Price Amount', 
+                  'Order Total Currency', 'Order Total Amount', 'Item Name', 'Item URL', 'Order Quantity', 
+                  'Store Name', 'Store URL', 'Order Image', 'Order URL']
+
+    writer = csv.DictWriter(file, fieldnames=fieldnames)
+    
+    # Write the header (column names)
+    writer.writeheader()
+    
+    # Write all rows (order data) to the CSV
+    writer.writerows(order_data)
